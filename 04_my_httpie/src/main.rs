@@ -4,7 +4,7 @@ use anyhow::{anyhow, Ok, Result};
 use clap::{Args, Parser, Subcommand};
 use colored::Colorize;
 use mime::Mime;
-use reqwest::{Client, Response, Url, header};
+use reqwest::{header, Client, Response, Url};
 
 /// 一个用Rust实现的原生HTTPie工具
 #[derive(Parser, Debug)]
@@ -133,60 +133,89 @@ async fn print_resp(resp: Response) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
-    fn error_if_post_body_not_in_pair() {
-        let result = Opts::try_parse_from(vec![
-            "my_httpie",
-            "post",
-            "https://httpbin.org/post",
-            "a=1",
-            "b",
-        ]);
-        assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .starts_with("error: invalid value 'b' for '[BODY]...': Failed to parse b"));
+    fn parse_url_works() {
+        assert!(parse_url("abc").is_err());
+        assert!(parse_url("http://abc.xyz").is_ok());
+        assert!(parse_url("https://httpbin.org/post").is_ok());
     }
+
     #[test]
-    fn error_if_url_illegal() {
-        let result = Opts::try_parse_from(vec!["my_httpie", "post", "abc", "a=1"]);
-        assert!(result.is_err());
-        assert!(result
-            .err()
-            .unwrap()
-            .to_string()
-            .starts_with("error: invalid value 'abc' for '<URL>': relative URL without a base"));
-    }
-    #[test]
-    fn success_parse() {
-        let result = Opts::try_parse_from(vec![
-            "my_httpie",
-            "post",
-            "https://httpbin.org/post",
-            "a=1",
-            "b=2",
-        ]);
-        assert!(result.is_ok());
-        match result.unwrap().subcmd {
-            SubCommand::Post(post) => {
-                assert_eq!(post.url, "https://httpbin.org/post");
-                assert_eq!(
-                    post.body,
-                    vec![
-                        KvPair {
-                            k: "a".into(),
-                            v: "1".into()
-                        },
-                        KvPair {
-                            k: "b".into(),
-                            v: "2".into()
-                        }
-                    ]
-                );
+    fn parse_kv_pair_works() {
+        assert!(parse_kv_pair("a").is_err());
+        assert_eq!(
+            parse_kv_pair("a=1").unwrap(),
+            KvPair {
+                k: "a".into(),
+                v: "1".into()
             }
-            _ => panic!("解析错误"),
-        };
+        );
+
+        assert_eq!(
+            parse_kv_pair("b=").unwrap(),
+            KvPair {
+                k: "b".into(),
+                v: "".into()
+            }
+        );
+    }
+    #[cfg(test)]
+    mod tests_clap {
+        use super::*;
+        #[test]
+        fn error_if_post_body_not_in_pair() {
+            let result = Opts::try_parse_from(vec![
+                "my_httpie",
+                "post",
+                "https://httpbin.org/post",
+                "a=1",
+                "b",
+            ]);
+            assert!(result.is_err());
+            assert!(result
+                .err()
+                .unwrap()
+                .to_string()
+                .starts_with("error: invalid value 'b' for '[BODY]...': Failed to parse b"));
+        }
+        #[test]
+        fn error_if_url_illegal() {
+            let result = Opts::try_parse_from(vec!["my_httpie", "post", "abc", "a=1"]);
+            assert!(result.is_err());
+            assert!(result.err().unwrap().to_string().starts_with(
+                "error: invalid value 'abc' for '<URL>': relative URL without a base"
+            ));
+        }
+        #[test]
+        fn success_parse() {
+            let result = Opts::try_parse_from(vec![
+                "my_httpie",
+                "post",
+                "https://httpbin.org/post",
+                "a=1",
+                "b=2",
+            ]);
+            assert!(result.is_ok());
+            match result.unwrap().subcmd {
+                SubCommand::Post(post) => {
+                    assert_eq!(post.url, "https://httpbin.org/post");
+                    assert_eq!(
+                        post.body,
+                        vec![
+                            KvPair {
+                                k: "a".into(),
+                                v: "1".into()
+                            },
+                            KvPair {
+                                k: "b".into(),
+                                v: "2".into()
+                            }
+                        ]
+                    );
+                }
+                _ => panic!("解析错误"),
+            };
+        }
     }
 }
