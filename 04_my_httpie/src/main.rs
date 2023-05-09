@@ -5,6 +5,12 @@ use clap::{Args, Parser, Subcommand};
 use colored::Colorize;
 use mime::Mime;
 use reqwest::{header, Client, Response, Url};
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Style, ThemeSet},
+    parsing::SyntaxSet,
+    util::{as_24_bit_terminal_escaped, LinesWithEndings},
+};
 
 /// 一个用Rust实现的原生HTTPie工具
 #[derive(Parser, Debug)]
@@ -24,15 +30,21 @@ enum SubCommand {
     Post(Post),
 }
 
+/// feed get with an url and retrieve the response
 #[derive(Args, Debug)]
 struct Get {
+    /// 请求 URL
     #[arg(value_parser=parse_url)]
     url: String,
 }
+/// feed post with and url and optional key=value pairs.
+/// post data as JSON and retrieve the response
 #[derive(Args, Debug)]
 struct Post {
+    /// 请求 URL
     #[arg(value_parser=parse_url)]
     url: String,
+    /// key=value 样式的body
     #[arg(value_parser=parse_kv_pair)]
     body: Vec<KvPair>,
 }
@@ -69,7 +81,10 @@ fn parse_kv_pair(s: &str) -> Result<KvPair> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let opts = Opts::parse();
-    let client = Client::new();
+    let mut headers = header::HeaderMap::new();
+    headers.insert("X-POWERED-BY", "Rust".parse()?);
+    headers.insert(header::USER_AGENT, "Rust Httpie".parse()?);
+    let client = Client::builder().default_headers(headers).build()?;
     let result = match opts.subcmd {
         SubCommand::Get(ref args) => get(client, args).await?,
         SubCommand::Post(ref args) => post(client, args).await?,
@@ -108,9 +123,8 @@ fn print_header(resp: &Response) {
 /// 打印HTTP body
 fn print_body(m: Option<Mime>, body: &String) {
     match m {
-        Some(v) if v == mime::APPLICATION_JSON => {
-            println!("{}", jsonxf::pretty_print(body).unwrap().cyan());
-        }
+        Some(v) if v == mime::APPLICATION_JSON => print_syntect(body, "json"),
+        Some(v) if v == mime::TEXT_HTML => print_syntect(body, "html"),
         _ => println!("{}", body),
     }
 }
@@ -120,6 +134,21 @@ fn get_content_type(resp: &Response) -> Option<Mime> {
         .get(header::CONTENT_TYPE)
         .map(|v| v.to_str().unwrap().parse().unwrap())
 }
+
+fn print_syntect(s: &str, ext: &str) {
+    // Load these once at the start of your program
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+
+    let syntax = ps.find_syntax_by_extension(ext).unwrap();
+    let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
+    for line in LinesWithEndings::from(s) {
+        let ranges: Vec<(Style, &str)> = h.highlight_line(line, &ps).unwrap();
+        let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+        print!("{}", escaped);
+    }
+}
+
 /// 打印整个响应
 async fn print_resp(resp: Response) -> Result<()> {
     print_status(&resp);
