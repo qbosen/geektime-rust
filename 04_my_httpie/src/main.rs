@@ -1,8 +1,8 @@
-use std::str::FromStr;
+use std::{str::FromStr, collections::HashMap};
 
 use anyhow::{anyhow, Ok, Result};
 use clap::{Args, Parser, Subcommand};
-use reqwest::Url;
+use reqwest::{Client, Url};
 
 /// 一个用Rust实现的原生HTTPie工具
 #[derive(Parser, Debug)]
@@ -64,9 +64,32 @@ fn parse_kv_pair(s: &str) -> Result<KvPair> {
     s.parse()
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<()> {
     let opts = Opts::parse();
-    println!("{:?}", opts)
+    let client = Client::new();
+    let result = match opts.subcmd {
+        SubCommand::Get(ref args) => get(client, args).await?,
+        SubCommand::Post(ref args) => post(client, args).await?,
+    };
+    Ok(result)
+}
+
+async fn get(client: Client, args: &Get) -> Result<()> {
+    // args是一个不可变引用,无法移动args.url的所有权; 这里传递&String,有对应的IntoUrl实现 impl<'a> IntoUrl for &'a String {}
+    let resp = client.get(&args.url).send().await?;
+    println!("{:?}", resp.text().await?);
+    Ok(())
+}
+
+async fn post(client: Client, args: &Post) -> Result<()> {
+    let mut body = HashMap::new();
+    for pair in args.body.iter(){
+        body.insert(&pair.k, &pair.v);
+    }
+    let resp = client.post(&args.url).json(&body).send().await?;
+    println!("{:?}", resp.text().await?);
+    Ok(())
 }
 
 #[cfg(test)]
