@@ -1,8 +1,10 @@
-use std::{str::FromStr, collections::HashMap};
+use std::{collections::HashMap, str::FromStr};
 
 use anyhow::{anyhow, Ok, Result};
 use clap::{Args, Parser, Subcommand};
-use reqwest::{Client, Url};
+use colored::Colorize;
+use mime::Mime;
+use reqwest::{Client, Response, Url, header};
 
 /// 一个用Rust实现的原生HTTPie工具
 #[derive(Parser, Debug)]
@@ -78,17 +80,53 @@ async fn main() -> Result<()> {
 async fn get(client: Client, args: &Get) -> Result<()> {
     // args是一个不可变引用,无法移动args.url的所有权; 这里传递&String,有对应的IntoUrl实现 impl<'a> IntoUrl for &'a String {}
     let resp = client.get(&args.url).send().await?;
-    println!("{:?}", resp.text().await?);
-    Ok(())
+    Ok(print_resp(resp).await?)
 }
 
 async fn post(client: Client, args: &Post) -> Result<()> {
     let mut body = HashMap::new();
-    for pair in args.body.iter(){
+    for pair in args.body.iter() {
         body.insert(&pair.k, &pair.v);
     }
     let resp = client.post(&args.url).json(&body).send().await?;
-    println!("{:?}", resp.text().await?);
+    Ok(print_resp(resp).await?)
+}
+
+/// 打印服务器版本号+状态码
+fn print_status(resp: &Response) {
+    let status = format!("{:?} {}", resp.version(), resp.status()).blue();
+    println!("{}\n", status);
+}
+/// 打印响应头
+fn print_header(resp: &Response) {
+    for (k, v) in resp.headers() {
+        println!("{}: {:?}", k.to_string().green(), v);
+    }
+    println!();
+}
+
+/// 打印HTTP body
+fn print_body(m: Option<Mime>, body: &String) {
+    match m {
+        Some(v) if v == mime::APPLICATION_JSON => {
+            println!("{}", jsonxf::pretty_print(body).unwrap().cyan());
+        }
+        _ => println!("{}", body),
+    }
+}
+
+fn get_content_type(resp: &Response) -> Option<Mime> {
+    resp.headers()
+        .get(header::CONTENT_TYPE)
+        .map(|v| v.to_str().unwrap().parse().unwrap())
+}
+/// 打印整个响应
+async fn print_resp(resp: Response) -> Result<()> {
+    print_status(&resp);
+    print_header(&resp);
+    let mime = get_content_type(&resp);
+    let body = resp.text().await?;
+    print_body(mime, &body);
     Ok(())
 }
 
