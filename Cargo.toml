@@ -8,6 +8,7 @@ members = [
   "04_httpie",
   "04_my_httpie",
   "05_thumbor",
+  "05_my_thumbor",
   "06_queryer/queryer",
   "06_queryer/queryer-js",
   "06_queryer/queryer-py",
