@@ -84,6 +84,12 @@ impl Spec {
             })),
         }
     }
+
+    pub fn new_watermark(x: u32, y: u32) -> Self {
+        Self {
+            data: Some(spec::Data::Watermark(Watermark { x, y })),
+        }
+    }
 }
 
 #[cfg(test)]
