@@ -105,7 +105,17 @@ mod tests {
 
         let image_spec = ImageSpec::new(vec![spec1, spec2]);
         let encode: String = image_spec.borrow().into();
-        print!("{}", encode);
+        println!("{}", encode);
         assert_eq!(image_spec, encode.as_str().try_into().unwrap());
+    }
+
+    #[test]
+    fn test_spec(){
+        // let spec = Spec::new_watermark( 20,20);
+        let spec = Spec::new_resize(500, 800, resize::SampleFilter::Nearest);
+        let image_spec = ImageSpec::new(vec![spec]);
+        let encode: String = image_spec.borrow().into();
+        println!("{}", encode);
+        println!("{:?}", image_spec);
     }
 }

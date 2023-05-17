@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Result;
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     http::{HeaderMap, HeaderValue, StatusCode},
     routing::get,
     Router,
@@ -21,7 +21,9 @@ use tokio::sync::Mutex;
 use tower::ServiceBuilder;
 use tower_http::add_extension::AddExtensionLayer;
 
+mod engine;
 mod pb;
+use engine::{Engine, Photon};
 use pb::*;
 use tracing::{info, instrument};
 
@@ -30,6 +32,12 @@ struct Params {
     spec: String,
     url: String,
 }
+
+#[derive(Deserialize)]
+struct Arguments {
+    show_spec: i32,
+}
+
 //用hash做key 可能冲突, 考虑到是个lru,且容量有限,所以忽略
 type Cache = Arc<Mutex<LruCache<u64, Bytes>>>;
 
@@ -50,7 +58,7 @@ async fn main() {
 
     // run our app with hyper, listening globally on port 3000
     let addr = "0.0.0.0:3000".parse().unwrap();
-    
+
     print_test_url("https://images.pexels.com/photos/1562477/pexels-photo-1562477.jpeg?auto=compress&cs=tinysrgb&dpr=3&h=750&w=1260");
     info!("Listening on {}", addr);
 
@@ -63,6 +71,7 @@ async fn main() {
 // ./target/debug/my_httpie get "http://localhost:3000/image/CgoKCAjYBBCgBiADCgY6BAgUEBQKBDICCAM/https%3A%2F%2Fimages%2Epexels%2Ecom%2Fphotos%2F2470905%2Fpexels%2Dphoto%2D2470905%2Ejpeg%3Fauto%3Dcompress%26cs%3Dtinysrgb%26dpr%3D2%26h%3D750%26w%3D1260"
 async fn generate(
     Path(Params { spec, url }): Path<Params>,
+    arguments: Option<Query<Arguments>>,
     Extension(cache): Extension<Cache>,
 ) -> Result<(HeaderMap, Vec<u8>), StatusCode> {
     let spec: ImageSpec = spec
@@ -73,13 +82,27 @@ async fn generate(
     let data = retrieve_image(&url, cache)
         .await
         .map_err(|_| StatusCode::BAD_REQUEST)?;
-    // TODO handle picture
+    if let Some(Query(Arguments { show_spec })) = arguments {
+        if show_spec > 0 {
+            info!("Decode spec: \n{:?}", &spec);
+        }
+    }
+
+    // handle picture
+    let mut engine: Photon = data
+        .try_into()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    engine.apply(&spec.specs);
+
+    let image = engine.generate(image::ImageOutputFormat::Jpeg(80));
+    info!("Finish processing: image size {}", image.len());
+
     let mut headers = HeaderMap::new();
     headers.insert(
         axum::http::header::CONTENT_TYPE,
         HeaderValue::from_static("image/jpeg"),
     );
-    Ok((headers, data.to_vec()))
+    Ok((headers, image))
 }
 
 #[instrument(level = "info", skip(cache))]
